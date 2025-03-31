@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cast"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -14,6 +15,10 @@ import (
 
 func init() {
 	dbCreator := func(name string, dir string, opts Options) (DB, error) {
+		dirs := strings.Split(dir, ",")
+		if len(dirs) > 1 {
+			return NewShardedDB(name, dirs, opts)
+		}
 		return NewGoLevelDB(name, dir, opts)
 	}
 	registerDBCreator(GoLevelDBBackend, dbCreator, false)

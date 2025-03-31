@@ -2,18 +2,17 @@ package db
 
 import (
 	"bytes"
-	"fmt"
 	"sort"
 	"sync"
 )
 
-// cachingDB 是中间层，实现了 DB 接口，提供内存缓存功能。
+// cachingDB is a middleware layer that implements the DB interface and provides in-memory caching.
 type cachingDB struct {
-	db        DB                    // 底层 LevelDB 实例
-	mu        sync.RWMutex          // 读写锁保护缓存和关闭状态
-	cache     map[string]*cacheItem // 内存缓存，存储未提交的修改
-	batchSize int                   // 触发异步写入的批次大小
-	closed    chan struct{}         // 关闭信号通道
+	db        DB                    // Underlying LevelDB instance
+	mu        sync.RWMutex          // Read-write lock to protect cache and closed state
+	cache     map[string]*cacheItem // In-memory cache to store uncommitted changes
+	batchSize int                   // Batch size to trigger asynchronous writes
+	closed    chan struct{}         // Channel to signal closure
 }
 
 func (c *cachingDB) Print() error {
@@ -24,13 +23,13 @@ func (c *cachingDB) Stats() map[string]string {
 	return c.db.Stats()
 }
 
-// cacheItem 表示缓存中的一个条目，可能是设置的值或删除标记。
+// cacheItem represents an entry in the cache, which could be a set value or a delete marker.
 type cacheItem struct {
 	value   []byte
 	deleted bool
 }
 
-// NewCachingDB 创建一个新的缓存中间层实例。
+// NewCachingDB creates a new caching middleware instance.
 func NewCachingDB(underlyingDB DB, batchSize int) DB {
 	c := &cachingDB{
 		db:        underlyingDB,
@@ -38,25 +37,24 @@ func NewCachingDB(underlyingDB DB, batchSize int) DB {
 		batchSize: batchSize,
 		closed:    make(chan struct{}),
 	}
-	fmt.Println("NewCachingDB")
-	go c.backgroundWriter() // 启动后台写入协程
+	go c.backgroundWriter() // Start the background writer goroutine
 	return c
 }
 
-// 后台异步写入处理
+// Background asynchronous write handler
 func (c *cachingDB) backgroundWriter() {
 	for {
 		select {
 		case <-c.closed:
-			c.flush(true) // 关闭时强制刷新
+			c.flush(true) // Force flush on close
 			return
 		default:
-			c.flush(false) // 定期或条件触发刷新
+			c.flush(false) // Periodic or condition-triggered flush
 		}
 	}
 }
 
-// flush 将当前缓存写入底层数据库
+// flush writes the current cache to the underlying database
 func (c *cachingDB) flush(sync bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -90,12 +88,12 @@ func (c *cachingDB) flush(sync bool) error {
 		return err
 	}
 
-	// 成功写入后清空缓存
+	// Clear the cache after successful write
 	c.cache = make(map[string]*cacheItem)
 	return nil
 }
 
-// Get 实现 DB 接口
+// Get implements the DB interface
 func (c *cachingDB) Get(key []byte) ([]byte, error) {
 	if len(key) == 0 {
 		return nil, errKeyEmpty
@@ -115,7 +113,7 @@ func (c *cachingDB) Get(key []byte) ([]byte, error) {
 	return c.db.Get(key)
 }
 
-// Set 实现 DB 接口
+// Set implements the DB interface
 func (c *cachingDB) Set(key, value []byte) error {
 	if len(key) == 0 {
 		return errKeyEmpty
@@ -135,7 +133,7 @@ func (c *cachingDB) Set(key, value []byte) error {
 	return nil
 }
 
-// SetSync 实现 DB 接口
+// SetSync implements the DB interface
 func (c *cachingDB) SetSync(key, value []byte) error {
 	if err := c.Set(key, value); err != nil {
 		return err
@@ -143,7 +141,7 @@ func (c *cachingDB) SetSync(key, value []byte) error {
 	return c.flush(true)
 }
 
-// Delete 实现 DB 接口
+// Delete implements the DB interface
 func (c *cachingDB) Delete(key []byte) error {
 	if len(key) == 0 {
 		return errKeyEmpty
@@ -160,7 +158,7 @@ func (c *cachingDB) Delete(key []byte) error {
 	return nil
 }
 
-// DeleteSync 实现 DB 接口
+// DeleteSync implements the DB interface
 func (c *cachingDB) DeleteSync(key []byte) error {
 	if err := c.Delete(key); err != nil {
 		return err
@@ -168,7 +166,7 @@ func (c *cachingDB) DeleteSync(key []byte) error {
 	return c.flush(true)
 }
 
-// 其他接口方法实现（部分示例）
+// Other interface method implementations (partial examples)
 func (c *cachingDB) Close() error {
 	close(c.closed)
 	return c.db.Close()
@@ -182,7 +180,7 @@ func (c *cachingDB) Has(key []byte) (bool, error) {
 	return value != nil, nil
 }
 
-// Iterator 实现（合并缓存和底层数据）
+// Iterator implementation (merging cache and underlying data)
 func (c *cachingDB) Iterator(start, end []byte) (Iterator, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -218,7 +216,7 @@ func (c *cachingDB) Iterator(start, end []byte) (Iterator, error) {
 	}, nil
 }
 
-// mergedIterator 合并缓存和底层迭代器的实现
+// mergedIterator implementation merging cache and underlying iterator
 type mergedIterator struct {
 	cache      []*struct{ key, value []byte }
 	underlying Iterator
@@ -235,10 +233,9 @@ func (it *mergedIterator) Valid() bool {
 	return it.valid
 }
 
-// 迭代器核心逻辑（示例实现）
+// Core logic of the iterator (example implementation)
 func (it *mergedIterator) Next() {
-	// 实现合并逻辑，此处需要比较缓存和底层数据的当前键值
-	// 此处为简化示例，实际需要处理各种边界情况
+	// Implement merge logic, handling various edge cases
 	it.valid = false
 	if it.cachePos < len(it.cache) {
 		it.current = *it.cache[it.cachePos]
@@ -255,22 +252,22 @@ func (it *mergedIterator) Next() {
 	}
 }
 
-// 其他迭代器方法实现
+// Other iterator method implementations
 func (it *mergedIterator) Key() []byte   { return it.current.key }
 func (it *mergedIterator) Value() []byte { return it.current.value }
 func (it *mergedIterator) Error() error  { return it.underlying.Error() }
 func (it *mergedIterator) Close() error  { return it.underlying.Close() }
 
-// 辅助函数：判断键是否在范围内
+// Helper function: check if a key is within the range
 func inRange(key, start, end []byte) bool {
 	return (start == nil || bytes.Compare(key, start) >= 0) &&
 		(end == nil || bytes.Compare(key, end) < 0)
 }
 
-// 实现其他必要的接口方法（部分示例）
+// Implement other necessary interface methods (partial examples)
 func (c *cachingDB) ReverseIterator(start, end []byte) (Iterator, error) {
-	// 实现类似 Iterator 但方向相反
-	// 此处省略具体实现
+	// Implement similar to Iterator but in reverse direction
+	// Omitted for brevity
 	return c.db.ReverseIterator(start, end)
 }
 
@@ -288,7 +285,7 @@ func (c *cachingDB) NewBatchWithSize(size int) Batch {
 	}
 }
 
-// cachingBatch 实现 Batch 接口
+// cachingBatch implements the Batch interface
 type cachingBatch struct {
 	cacheDB *cachingDB
 	ops     []batchOperation
@@ -332,7 +329,7 @@ func (b *cachingBatch) Write() error {
 	return nil
 }
 
-// 其他 Batch 方法实现
+// Other Batch method implementations
 func (b *cachingBatch) WriteSync() error { return b.Write() }
 func (b *cachingBatch) Close() error     { b.closed = true; return nil }
 func (b *cachingBatch) GetByteSize() (int, error) {
